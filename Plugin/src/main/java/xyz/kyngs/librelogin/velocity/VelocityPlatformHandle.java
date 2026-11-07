@@ -11,6 +11,7 @@ import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.server.RegisteredServer;
 import java.net.InetSocketAddress;
 import java.util.Collection;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -143,7 +144,8 @@ public class VelocityPlatformHandle implements PlatformHandle<Player, Registered
         if (player != null) {
             virt = player.getVirtualHost().orElse(null);
         }
-        return virt == null ? null : virt.getHostName();
+        // Forced hosts are case-insensitive, LibreLogin registers them in lowercase
+        return virt == null ? null : virt.getHostName().toLowerCase(Locale.ROOT);
     }
 
     @Override

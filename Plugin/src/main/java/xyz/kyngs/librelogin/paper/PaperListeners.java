@@ -183,7 +183,7 @@ public class PaperListeners extends AuthenticListeners<PaperLibreLogin, Player, 
 
         ipCache.invalidate(puuid);
 
-        var world = chooseServer(puuid, ip, readOnlyUserCache.getIfPresent(puuid));
+        var world = chooseServer(puuid, ip, readOnlyUserCache.getIfPresent(puuid), null);
         if (world.value() == null) {
             Bukkit.getScheduler()
                     .runTask(

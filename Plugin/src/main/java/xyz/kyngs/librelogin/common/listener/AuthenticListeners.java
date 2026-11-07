@@ -362,15 +362,17 @@ public class AuthenticListeners<Plugin extends AuthenticLibreLogin<P, S>, P, S> 
         return chooseServer(
                 platformHandle.getUUIDForPlayer(player),
                 ip == null ? platformHandle.getIP(player) : ip,
-                user);
+                user,
+                player);
     }
 
     /**
+     * @param player The player, or null if the platform has no player instance at this point.
      * @return A BiHolder where the key is true if the player is authenticated, and the value is the
      *     server to send them to.
      */
     protected BiHolder<Boolean, S> chooseServer(
-            UUID uuid, @NotNull String ip, @Nullable User user) {
+            UUID uuid, @NotNull String ip, @Nullable User user, @Nullable P player) {
         var fromFloodgate = plugin.fromFloodgate(uuid);
 
         var sessionTime =
@@ -393,9 +395,9 @@ public class AuthenticListeners<Plugin extends AuthenticLibreLogin<P, S>, P, S> 
                                 .plus(sessionTime)
                                 .isAfter(LocalDateTime.now()))) {
             return new BiHolder<>(
-                    true, plugin.getServerHandler().chooseLobbyServer(user, null, true, false));
+                    true, plugin.getServerHandler().chooseLobbyServer(user, player, true, false));
         } else {
-            return new BiHolder<>(false, plugin.getServerHandler().chooseLimboServer(user, null));
+            return new BiHolder<>(false, plugin.getServerHandler().chooseLimboServer(user, player));
         }
     }
 }

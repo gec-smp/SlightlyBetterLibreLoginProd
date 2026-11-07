@@ -21,9 +21,13 @@ import com.velocitypowered.api.util.GameProfile;
 import io.netty.channel.Channel;
 import io.netty.util.AttributeKey;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.util.Locale;
+import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import net.kyori.adventure.text.Component;
+import org.jetbrains.annotations.Nullable;
 import xyz.kyngs.librelogin.api.event.exception.EventCancelledException;
 import xyz.kyngs.librelogin.common.config.ConfigurationKeys;
 import xyz.kyngs.librelogin.common.listener.AuthenticListeners;
@@ -36,6 +40,8 @@ public class VelocityListeners
     private static final Field INITIAL_MINECRAFT_CONNECTION;
     private static final Field INITIAL_CONNECTION_DELEGATE;
     private static final Field CHANNEL;
+    private static final Method GET_CONFIGURATION;
+    private static final Method GET_FORCED_HOSTS;
 
     static {
         try {
@@ -77,6 +83,21 @@ public class VelocityListeners
         } catch (ClassNotFoundException | NoSuchFieldException e) {
             throw new RuntimeException(e);
         }
+
+        Method getConfiguration = null;
+        Method getForcedHosts = null;
+        try {
+            getConfiguration =
+                    Class.forName("com.velocitypowered.proxy.VelocityServer")
+                            .getMethod("getConfiguration");
+            getForcedHosts =
+                    Class.forName("com.velocitypowered.proxy.config.VelocityConfiguration")
+                            .getMethod("getForcedHosts");
+        } catch (ClassNotFoundException | NoSuchMethodException ignored) {
+            // Unknown Velocity version, the forced hosts from velocity.toml will not be respected
+        }
+        GET_CONFIGURATION = getConfiguration;
+        GET_FORCED_HOSTS = getForcedHosts;
     }
 
     public VelocityListeners(VelocityLibreLogin plugin) {
@@ -155,16 +176,69 @@ public class VelocityListeners
 
     @Subscribe(order = PostOrder.LAST)
     public void chooseServer(PlayerChooseInitialServerEvent event) {
-        var server = chooseServer(event.getPlayer(), null, null);
+        var player = event.getPlayer();
+        var server = chooseServer(player, null, null);
 
         if (server.value() == null) {
-            event.getPlayer()
-                    .disconnect(
-                            plugin.getMessages()
-                                    .getMessage("kick-no-" + (server.key() ? "lobby" : "limbo")));
+            player.disconnect(
+                    plugin.getMessages()
+                            .getMessage("kick-no-" + (server.key() ? "lobby" : "limbo")));
             event.setInitialServer(null);
-        } else {
+            return;
+        }
+
+        // Players which are not authenticated have to land in limbo, no matter what Velocity
+        // selected for them.
+        if (!server.key()) {
             event.setInitialServer(server.value());
+            return;
+        }
+
+        // Precedence: a forced host configured in LibreLogin wins over the server Velocity already
+        // picked from velocity.toml [forced-hosts], which wins over LibreLogin's root lobby.
+        var virtualHost = platformHandle.getPlayersVirtualHost(player);
+        var libreLoginForcedHost =
+                virtualHost != null
+                        && plugin.getServerHandler().getLobbyServers().containsKey(virtualHost);
+
+        if (!libreLoginForcedHost
+                && event.getInitialServer().isPresent()
+                && isVelocityForcedHost(virtualHost)) {
+            // Velocity already mapped this host to a server in velocity.toml, do not overwrite it
+            // with the root lobby.
+            return;
+        }
+
+        event.setInitialServer(server.value());
+    }
+
+    /**
+     * Checks whether the given virtual host is configured as a forced host in velocity.toml.
+     *
+     * @param virtualHost The virtual host of the player (lowercase), or null if there is none
+     * @return True if Velocity has a forced host entry for the given host
+     */
+    private boolean isVelocityForcedHost(@Nullable String virtualHost) {
+        if (virtualHost == null || GET_CONFIGURATION == null || GET_FORCED_HOSTS == null) {
+            return false;
+        }
+
+        try {
+            var configuration = GET_CONFIGURATION.invoke(plugin.getServer());
+
+            if (configuration == null
+                    || !(GET_FORCED_HOSTS.invoke(configuration) instanceof Map<?, ?> forcedHosts)) {
+                return false;
+            }
+
+            return forcedHosts.keySet().stream()
+                    .anyMatch(
+                            host ->
+                                    host instanceof String name
+                                            && name.toLowerCase(Locale.ROOT).equals(virtualHost));
+        } catch (ReflectiveOperationException e) {
+            plugin.getLogger().debug("Failed to read the forced hosts from velocity.toml");
+            return false;
         }
     }
 

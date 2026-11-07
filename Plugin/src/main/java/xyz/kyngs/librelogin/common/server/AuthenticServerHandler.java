@@ -15,6 +15,7 @@ import com.google.common.collect.Multimap;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.Locale;
 import java.util.Optional;
 import org.jetbrains.annotations.Nullable;
 import xyz.kyngs.librelogin.api.database.User;
@@ -212,7 +213,8 @@ public class AuthenticServerHandler<P, S> implements ServerHandler<P, S> {
     @Override
     public void registerLobbyServer(S server, String forcedHost) {
         getLatestPing(server);
-        lobbyServers.put(forcedHost, server);
+        // Forced hosts are case-insensitive, they are looked up in lowercase
+        lobbyServers.put(forcedHost.toLowerCase(Locale.ROOT), server);
     }
 
     @Override
